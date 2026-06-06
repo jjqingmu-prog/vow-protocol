@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Run: python3 reddit_post.py
+Alternative approach: cookie-based login (no OAuth/app registration needed).
 
-Posts the first value-first introduction to r/spirituality.
+Usage: python3 scripts/reddit_post.py
 """
-import os, sys, json
-import praw
+import re, json, sys, requests
 
-# ── Credentials ──────────────────────────────────────────────
-REDDIT_USER = "DaoVowScout"
-REDDIT_PASS = "5285jun1215"
-USER_AGENT = "DaoVowScout/v1.0 (building a modern Eastern destiny archive)"
+USER = "DaoVowScout"
+PASS = "5285jun1215"
+AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
-# ── Post content ──────────────────────────────────────────────
 SUBREDDIT = "spirituality"
-
 TITLE = "I spent a year studying BaZi (Chinese Four Pillars). Here's what surprised me."
-
 BODY = """I came into BaZi (四柱命理, Four Pillars of Destiny) the way most Westerners do — through the astrology-adjacent pipeline. Birth charts, elements, the usual. But a year later, the thing that keeps me in it is not the predictions. It's the framework.
 
 **Three things that surprised me:**
@@ -36,28 +31,117 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
-# ── Post ──────────────────────────────────────────────────────
-def main():
-    try:
-        reddit = praw.Reddit(
-            client_id="wLc2f5cp2lSGog",
-            client_secret="",
-            username=REDDIT_USER,
-            password=REDDIT_PASS,
-            user_agent=USER_AGENT
-        )
-        me = reddit.user.me()
-        print(f"✅ Logged in as: {me.name}")
-        
-        sub = reddit.subreddit(SUBREDDIT)
-        submission = sub.submit(title=TITLE, selftext=BODY)
-        print(f"✅ Posted to r/{SUBREDDIT}")
-        print(f"   Title: {TITLE}")
-        print(f"   URL: https://reddit.com{submission.permalink}")
-        
-    except Exception as e:
-        print(f"❌ Failed: {e}")
+
+def login():
+    """Login to Reddit and return session with auth cookies."""
+    session = requests.Session()
+    session.headers.update({"User-Agent": AGENT})
+    
+    # Step 1: Get the CSRF token
+    r = session.get("https://www.reddit.com/", timeout=15)
+    # Extract csrf_token
+    match = re.search(r'csrf_token:\s*"([^"]+)"', r.text)
+    if not match:
+        # Try another pattern
+        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
+    
+    csrf = match.group(1) if match else ""
+    print(f"CSRF token: {csrf[:20] if csrf else 'not found'}...")
+    
+    # Step 2: Login
+    login_data = {
+        "op": "login-main",
+        "user": USER,
+        "passwd": PASS,
+        "api_type": "json",
+    }
+    if csrf:
+        login_data["csrf_token"] = csrf
+    
+    r = session.post(
+        "https://www.reddit.com/api/login",
+        data=login_data,
+        timeout=15
+    )
+    
+    result = r.json()
+    if result.get("json", {}).get("errors"):
+        errors = result["json"]["errors"]
+        print(f"❌ Login failed: {errors}")
         sys.exit(1)
+    
+    # Check if we're logged in
+    cookie = session.cookies.get("reddit_session") or session.cookies.get("session")
+    print(f"✅ Logged in as {USER} (cookie: {cookie[:20] if cookie else '?'}...)")
+    
+    # Verify
+    r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
+    try:
+        me = r.json()
+        print(f"   User verified: {me.get('name', '?')} (karma: {me.get('link_karma', 0)})")
+    except:
+        print(f"   Warning: /api/v1/me returned {r.status_code}")
+    
+    return session
+
+
+def post_to_reddit(session):
+    """Submit a text post to a subreddit."""
+    # Need to get the subreddit page first for the CSRF token
+    r = session.get(f"https://www.reddit.com/r/{SUBREDDIT}/submit", timeout=15)
+    
+    match = re.search(r'csrf_token:\s*"([^"]+)"', r.text)
+    if not match:
+        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
+    
+    csrf = match.group(1) if match else ""
+    
+    # Also look for the upload care-id
+    care_id = ""
+    match2 = re.search(r'name="care-id"[^>]*value="([^"]+)"', r.text)
+    if match2:
+        care_id = match2.group(1)
+    
+    post_data = {
+        "api_type": "json",
+        "kind": "self",
+        "sr": SUBREDDIT,
+        "title": TITLE,
+        "text": BODY,
+        "sendreplies": True,
+        "submit_type": "json",
+    }
+    if csrf:
+        post_data["csrf_token"] = csrf
+    if care_id:
+        post_data["care-id"] = care_id
+    
+    r = session.post(
+        "https://www.reddit.com/api/submit",
+        data=post_data,
+        timeout=15
+    )
+    
+    try:
+        result = r.json()
+        if result.get("json", {}).get("errors"):
+            errors = result["json"]["errors"]
+            print(f"❌ Post failed: {errors}")
+            return None
+        
+        data = result.get("json", {}).get("data", {})
+        post_url = data.get("url", "") or data.get("permalink", "")
+        post_id = data.get("id", "")
+        print(f"✅ Posted to r/{SUBREDDIT}")
+        print(f"   ID: {post_id}")
+        print(f"   URL: https://reddit.com{post_url if post_url.startswith('/') else '/r/' + SUBREDDIT + '/comments/' + post_id}")
+        return post_id
+    except Exception as e:
+        print(f"❌ Post parse failed: {e}")
+        print(f"   Response: {r.text[:500]}")
+        return None
+
 
 if __name__ == "__main__":
-    main()
+    session = login()
+    post_to_reddit(session)
