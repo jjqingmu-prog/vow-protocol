@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses OAuth Bearer token + handles post flair requirements.
+Uses OAuth Bearer token.
 
-Usage:
-  python3 scripts/reddit_post.py                    # direct
-  python3 scripts/reddit_post.py --flair "Discussion"
+Usage: python3 scripts/reddit_post.py
 """
 
-import sys, json, requests
+import sys, json, requests, base64, datetime
 
-# ── Config ────────────────────────────────────────────────────
-BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODE3ODMyLjIzNDYxNywiaWF0IjoxNzgwNzMxNDMyLjIzNDYxNywianRpIjoib0tHa1hSN2RScldJcHo0TXhPVWx1S21jZ3hqV1FBIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJaQXNKSUdOM2Rubm54VHlnTHRkT3ZJdWVMbEtyU2J1UGhQMnRFbU1KTGVNIiwiZmxvIjoyfQ.Qw7zesC_5mtcBVPyHQcYHJtYEnF88Sh6ddUbx8hGJQtqyE-j249Wv-dkpN0sU9qQz0HiIIlAQ6y3xq-f-Dg-AcAhlwJRhPOZqHq7KdbB5QEnQHMX80p0oambA9ZP086aWZxm2rXpPKuZdBLSxyUiZU_P6YsvEOFq9oxXYgyzkqRNjKRkXRmwd9wwV85IqPaTI2mUz8xJV3WgBhDc2l0KXjgIJM22klhYCyo9hBj8XMHiLZds3HjTvUuCmEW1ozMmikye0dHmcw50B_kfIZiB-bo2KNulbZft0hwidqGXgncXh_7JpjMhaO-7uM7SKp9w_wIqViOcRbxy9MyyFbteCA"
+BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODQwNTQ2LjE3OTM2MiwiaWF0IjoxNzgwNzU0MTQ2LjE3OTM2MiwianRpIjoia0ZLSURNanFsLVdvczRDT2VOejJQOHlqVDhyeGhnIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXhzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJLOHh0OUJNSW04NDdqT2oxTlFpdlJVWmxLNWEtVXotaDJYYXEyWWdnd2dNIiwiZmxvIjoyfQ.iw45AR17-khTC1dZfvOPPi4BxYlP2_Ns806XXCrL0gly7d17mXPRitDuxKxTQW8CVVw8BH6btjZEj_krx1niL-23BQg0e_CSLS3i5lf8jda_G9q-BDU8RHOB-Xld7nuvgHlfUVVAsJ2xM1X9gzOFfhwqhNEo9_021gz4ubFad_oHuRfDBNBeVpQok1lMEtPz7E8tRHkhchFWrpCktytcJOh6WgCDX3zJBALq-JDqsEd71j2CsuAwu_K2UwB5wjJ3Lc9cp3Za4Y77A-mxCGw1c2DPizQiKq_k50Tt3IZmskCjEYcxmviaS2w6RQlL5-YwAA7uIQJTeq7i7qtmalu7AQ"
 
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
@@ -37,11 +34,6 @@ Would love to hear from others who've studied Eastern frameworks — BaZi, I Chi
 
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--flair", "-f", help="Post flair text (default: auto-select)")
-    args = parser.parse_args()
-    
     session = requests.Session()
     session.headers.update({
         "User-Agent": AGENT,
@@ -57,53 +49,37 @@ def main():
         print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
     else:
         print(f"❌ Auth failed: HTTP {r.status_code}")
+        print(f"   {r.text[:200]}")
         sys.exit(1)
     
     # ── Get available flairs ──
-    print(f"\nFetching available flairs for r/{SUBREDDIT}...")
+    print(f"\nFetching flairs for r/{SUBREDDIT}...")
     r = session.get(f"https://oauth.reddit.com/r/{SUBREDDIT}/api/link_flair", timeout=15)
     
     flair_id = None
     if r.status_code == 200:
         flairs = r.json()
-        print(f"   Found {len(flairs)} flairs:")
+        print(f"   Found {len(flairs)} flairs")
         for f in flairs:
-            text = f.get('text', '')
-            fid = f.get('id', '')
-            print(f"   [{fid}] {text}")
+            print(f"   [{f['id']}] {f['text']}")
         
-        # Auto-select flair
-        if args.flair:
-            # User specified flair text
+        # Auto-select: prefer Discussion or first text flair
+        for name in ["Discussion", "Resource", "Other", "Share"]:
             for f in flairs:
-                if args.flair.lower() in f.get('text', '').lower():
+                if f.get('text', '').lower() == name.lower():
                     flair_id = f['id']
-                    print(f"\n✅ Selected flair: {f['text']}")
+                    print(f"   → Using flair: {f['text']}")
                     break
-            if not flair_id:
-                print(f"\n❌ Flair '{args.flair}' not found. Using first available.")
-        
-        if not flair_id and flairs:
-            # Auto-pick: prefer "Discussion", "Other", or first text flair
-            priority = ["Discussion", "Resource", "Other", "Share", "General"]
-            for name in priority:
-                for f in flairs:
-                    if f.get('text', '').lower() == name.lower():
-                        flair_id = f['id']
-                        print(f"\n✅ Auto-selected flair: {f['text']}")
-                        break
-                if flair_id:
+            if flair_id:
+                break
+        if not flair_id:
+            for f in flairs:
+                if f.get('text', ''):
+                    flair_id = f['id']
+                    print(f"   → Using flair: {f['text']}")
                     break
-            if not flair_id:
-                # Just use the first one with text
-                for f in flairs:
-                    if f.get('text', ''):
-                        flair_id = f['id']
-                        print(f"\n✅ Auto-selected flair: {f['text']}")
-                        break
     else:
-        print(f"   Could not fetch flairs (HTTP {r.status_code})")
-        print(f"   Response: {r.text[:200]}")
+        print(f"   Could not fetch flairs (HTTP {r.status_code}), posting without flair")
     
     # ── Post ──
     print(f"\nPosting to r/{SUBREDDIT}...")
@@ -133,7 +109,6 @@ def main():
         
         data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
-        
         print(f"\n✅ Posted successfully!")
         print(f"   URL: https://www.reddit.com{post_url}")
     except Exception as e:
