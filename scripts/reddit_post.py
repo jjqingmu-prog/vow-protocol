@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Alternative approach: cookie-based login (no OAuth/app registration needed).
+Uses OAuth password grant with known public client IDs.
 
 Usage: python3 scripts/reddit_post.py
 """
-import re, json, sys, requests
+import sys, json
+import requests
 
 USER = "DaoVowScout"
 PASS = "5285jun1215"
@@ -32,76 +33,73 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
 
-def login():
-    """Login to Reddit and return session with auth cookies."""
+# Known public client IDs from Reddit's own apps
+CLIENT_IDS = [
+    "wLc2f5cp2lSGog",     # Reddit web / general
+    "AnTXNrVdHnMhVQ",     # Reddit iOS app
+    "CgIIvR19Q0aK6g",     # Reddit Android / newer
+]
+
+
+def try_oauth(client_id):
+    """Try OAuth password grant with a given client_id."""
+    try:
+        auth = requests.auth.HTTPBasicAuth(client_id, "")
+        data = {"grant_type": "password", "username": USER, "password": PASS}
+        headers = {"User-Agent": AGENT}
+        
+        r = requests.post(
+            "https://www.reddit.com/api/v1/access_token",
+            auth=auth, data=data, headers=headers,
+            timeout=15
+        )
+        
+        result = r.json()
+        if "access_token" in result:
+            token = result["access_token"]
+            print(f"✅ OAuth success with client_id={client_id}")
+            print(f"   Token expires: {result.get('expires_in', '?')}s")
+            return token
+        else:
+            err = result.get("error", "?")
+            msg = result.get("message", "")
+            
+            # Special case: if "unauthorized_client", this client doesn't support password grants
+            if err == "unauthorized_client":
+                return None  # Try next client_id
+            
+            if err == "invalid_grant":
+                print(f"❌ Invalid credentials for client_id={client_id}")
+                return False  # Wrong password (all will fail)
+            
+            print(f"❌ client_id={client_id}: {err}: {msg}")
+            return None
+    except Exception as e:
+        print(f"❌ client_id={client_id}: {e}")
+        return None
+
+
+def post_with_oauth(token):
+    """Submit a text post using OAuth bearer token."""
     session = requests.Session()
-    session.headers.update({"User-Agent": AGENT})
+    session.headers.update({
+        "User-Agent": AGENT,
+        "Authorization": f"bearer {token}"
+    })
     
-    # Step 1: Get the CSRF token
-    r = session.get("https://www.reddit.com/", timeout=15)
-    # Extract csrf_token
-    match = re.search(r'csrf_token:\s*"([^"]+)"', r.text)
-    if not match:
-        # Try another pattern
-        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
-    
-    csrf = match.group(1) if match else ""
-    print(f"CSRF token: {csrf[:20] if csrf else 'not found'}...")
-    
-    # Step 2: Login
-    login_data = {
-        "op": "login-main",
-        "user": USER,
-        "passwd": PASS,
-        "api_type": "json",
-    }
-    if csrf:
-        login_data["csrf_token"] = csrf
-    
-    r = session.post(
-        "https://www.reddit.com/api/login",
-        data=login_data,
-        timeout=15
-    )
-    
-    result = r.json()
-    if result.get("json", {}).get("errors"):
-        errors = result["json"]["errors"]
-        print(f"❌ Login failed: {errors}")
-        sys.exit(1)
-    
-    # Check if we're logged in
-    cookie = session.cookies.get("reddit_session") or session.cookies.get("session")
-    print(f"✅ Logged in as {USER} (cookie: {cookie[:20] if cookie else '?'}...)")
-    
-    # Verify
-    r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
+    # Verify auth
+    r = session.get("https://oauth.reddit.com/api/v1/me", timeout=10)
     try:
         me = r.json()
-        print(f"   User verified: {me.get('name', '?')} (karma: {me.get('link_karma', 0)})")
+        print(f"   Verified: {me.get('name', '?')} (karma: {me.get('link_karma', 0)})")
     except:
         print(f"   Warning: /api/v1/me returned {r.status_code}")
+        if r.status_code == 401:
+            print("   (token expired)")
+            return False
+        return False
     
-    return session
-
-
-def post_to_reddit(session):
-    """Submit a text post to a subreddit."""
-    # Need to get the subreddit page first for the CSRF token
-    r = session.get(f"https://www.reddit.com/r/{SUBREDDIT}/submit", timeout=15)
-    
-    match = re.search(r'csrf_token:\s*"([^"]+)"', r.text)
-    if not match:
-        match = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', r.text)
-    
-    csrf = match.group(1) if match else ""
-    
-    # Also look for the upload care-id
-    care_id = ""
-    match2 = re.search(r'name="care-id"[^>]*value="([^"]+)"', r.text)
-    if match2:
-        care_id = match2.group(1)
-    
+    # Post
     post_data = {
         "api_type": "json",
         "kind": "self",
@@ -109,39 +107,53 @@ def post_to_reddit(session):
         "title": TITLE,
         "text": BODY,
         "sendreplies": True,
-        "submit_type": "json",
     }
-    if csrf:
-        post_data["csrf_token"] = csrf
-    if care_id:
-        post_data["care-id"] = care_id
     
     r = session.post(
-        "https://www.reddit.com/api/submit",
+        "https://oauth.reddit.com/api/submit",
         data=post_data,
         timeout=15
     )
     
     try:
         result = r.json()
-        if result.get("json", {}).get("errors"):
-            errors = result["json"]["errors"]
-            print(f"❌ Post failed: {errors}")
-            return None
+        j = result.get("json", {})
+        if j.get("errors"):
+            print(f"❌ Post failed: {j['errors']}")
+            return False
         
-        data = result.get("json", {}).get("data", {})
+        data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
-        post_id = data.get("id", "")
         print(f"✅ Posted to r/{SUBREDDIT}")
-        print(f"   ID: {post_id}")
-        print(f"   URL: https://reddit.com{post_url if post_url.startswith('/') else '/r/' + SUBREDDIT + '/comments/' + post_id}")
-        return post_id
+        print(f"   URL: https://reddit.com{post_url if post_url else '/'}")
+        return True
     except Exception as e:
-        print(f"❌ Post parse failed: {e}")
+        print(f"❌ Post failed: {e}")
         print(f"   Response: {r.text[:500]}")
-        return None
+        return False
+
+
+def main():
+    token = None
+    for cid in CLIENT_IDS:
+        result = try_oauth(cid)
+        if result and isinstance(result, str):
+            token = result
+            break
+    
+    if not token:
+        print("\n❌ All client IDs failed.")
+        print("\nThe issue: Reddit requires a registered app (client_id + client_secret).")
+        print("Known public client IDs no longer work with password grants.")
+        print("\nPlease register an app via your browser:")
+        print("  1. Login to https://www.reddit.com as DaoVowScout")
+        print("  2. Go to https://old.reddit.com/prefs/apps")
+        print("  3. Click 'create app' and fill the form")
+        print("  4. Send me the client_id and secret")
+        sys.exit(1)
+    
+    post_with_oauth(token)
 
 
 if __name__ == "__main__":
-    session = login()
-    post_to_reddit(session)
+    main()
