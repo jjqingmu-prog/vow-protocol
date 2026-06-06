@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses OAuth Bearer token from browser session.
+Uses OAuth Bearer token + handles post flair requirements.
 
 Usage:
   python3 scripts/reddit_post.py                    # direct
-  python3 scripts/reddit_post.py --proxy socks5://127.0.0.1:3020   # via mihomo
+  python3 scripts/reddit_post.py --flair "Discussion"
 """
+
 import sys, json, requests
 
 # ── Config ────────────────────────────────────────────────────
-BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODE3ODMyLjIzNDYxNywiaWF0IjoxNzgwNzMxNDMyLjIzNDYxNywianRpIjoib0tHa1hSN2RScldJcHo0TXhPVWx1S21jZ3hqV1FBIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXhzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJaQXNKSUdOM2Rubm54VHlnTHRkT3ZJdWVMbEtyU2J1UGhQMnRFbU1KTGVNIiwiZmxvIjoyfQ.Qw7zesC_5mtcBVPyHQcYHJtYEnF88Sh6ddUbx8hGJQtqyE-j249Wv-dkpN0sU9qQz0HiIIlAQ6y3xq-f-Dg-AcAhlwJRhPOZqHq7KdbB5QEnQHMX80p0oambA9ZP086aWZxm2rXpPKuZdBLSxyUiZU_P6YsvEOFq9oxXYgyzkqRNjKRkXRmwd9wwV85IqPaTI2mUz8xJV3WgBhDc2l0KXjgIJM22klhYCyo9hBj8XMHiLZds3HjTvUuCmEW1ozMmikye0dHmcw50B_kfIZiB-bo2KNulbZft0hwidqGXgncXh_7JpjMhaO-7uM7SKp9w_wIqViOcRbxy9MyyFbteCA"
+BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODE3ODMyLjIzNDYxNywiaWF0IjoxNzgwNzMxNDMyLjIzNDYxNywianRpIjoib0tHa1hSN2RScldJcHo0TXhPVWx1S21jZ3hqV1FBIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJaQXNKSUdOM2Rubm54VHlnTHRkT3ZJdWVMbEtyU2J1UGhQMnRFbU1KTGVNIiwiZmxvIjoyfQ.Qw7zesC_5mtcBVPyHQcYHJtYEnF88Sh6ddUbx8hGJQtqyE-j249Wv-dkpN0sU9qQz0HiIIlAQ6y3xq-f-Dg-AcAhlwJRhPOZqHq7KdbB5QEnQHMX80p0oambA9ZP086aWZxm2rXpPKuZdBLSxyUiZU_P6YsvEOFq9oxXYgyzkqRNjKRkXRmwd9wwV85IqPaTI2mUz8xJV3WgBhDc2l0KXjgIJM22klhYCyo9hBj8XMHiLZds3HjTvUuCmEW1ozMmikye0dHmcw50B_kfIZiB-bo2KNulbZft0hwidqGXgncXh_7JpjMhaO-7uM7SKp9w_wIqViOcRbxy9MyyFbteCA"
 
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
@@ -35,61 +36,78 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
 
-# ── Proxy ─────────────────────────────────────────────────────
-def get_proxies():
+def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--proxy", "-p", help="SOCKS5 proxy URL (e.g. socks5://127.0.0.1:3020)")
+    parser.add_argument("--flair", "-f", help="Post flair text (default: auto-select)")
     args = parser.parse_args()
-    if args.proxy:
-        return {"http": args.proxy, "https": args.proxy}
-    # Try pysocks for SOCKS support
-    try:
-        import socks
-        return None
-    except:
-        pass
-    return None
-
-
-def main():
-    proxies = get_proxies()
     
     session = requests.Session()
     session.headers.update({
         "User-Agent": AGENT,
         "Authorization": f"Bearer {BEARER_TOKEN}"
     })
-    if proxies:
-        session.proxies.update(proxies)
     
     # ── Verify auth ──
     print("Verifying authentication...")
-    try:
-        r = session.get("https://oauth.reddit.com/api/v1/me", timeout=15)
-        if r.status_code == 200:
-            me = r.json()
-            username = me.get("name", "?")
-            link_karma = me.get("link_karma", 0)
-            comment_karma = me.get("comment_karma", 0)
-            print(f"✅ Authenticated as: {username}")
-            print(f"   Karma: {link_karma} link / {comment_karma} comment")
-        else:
-            print(f"❌ Auth failed: HTTP {r.status_code}")
-            try:
-                err = r.json()
-                print(f"   Error: {err.get('error', '?')}: {err.get('message', '')}")
-            except:
-                print(f"   Body: {r.text[:200]}")
-            sys.exit(1)
-    except Exception as e:
-        print(f"❌ Connection failed: {e}")
+    r = session.get("https://oauth.reddit.com/api/v1/me", timeout=15)
+    if r.status_code == 200:
+        me = r.json()
+        print(f"✅ Authenticated as: {me.get('name', '?')}")
+        print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
+    else:
+        print(f"❌ Auth failed: HTTP {r.status_code}")
         sys.exit(1)
+    
+    # ── Get available flairs ──
+    print(f"\nFetching available flairs for r/{SUBREDDIT}...")
+    r = session.get(f"https://oauth.reddit.com/r/{SUBREDDIT}/api/link_flair", timeout=15)
+    
+    flair_id = None
+    if r.status_code == 200:
+        flairs = r.json()
+        print(f"   Found {len(flairs)} flairs:")
+        for f in flairs:
+            text = f.get('text', '')
+            fid = f.get('id', '')
+            print(f"   [{fid}] {text}")
+        
+        # Auto-select flair
+        if args.flair:
+            # User specified flair text
+            for f in flairs:
+                if args.flair.lower() in f.get('text', '').lower():
+                    flair_id = f['id']
+                    print(f"\n✅ Selected flair: {f['text']}")
+                    break
+            if not flair_id:
+                print(f"\n❌ Flair '{args.flair}' not found. Using first available.")
+        
+        if not flair_id and flairs:
+            # Auto-pick: prefer "Discussion", "Other", or first text flair
+            priority = ["Discussion", "Resource", "Other", "Share", "General"]
+            for name in priority:
+                for f in flairs:
+                    if f.get('text', '').lower() == name.lower():
+                        flair_id = f['id']
+                        print(f"\n✅ Auto-selected flair: {f['text']}")
+                        break
+                if flair_id:
+                    break
+            if not flair_id:
+                # Just use the first one with text
+                for f in flairs:
+                    if f.get('text', ''):
+                        flair_id = f['id']
+                        print(f"\n✅ Auto-selected flair: {f['text']}")
+                        break
+    else:
+        print(f"   Could not fetch flairs (HTTP {r.status_code})")
+        print(f"   Response: {r.text[:200]}")
     
     # ── Post ──
     print(f"\nPosting to r/{SUBREDDIT}...")
-    print(f"   Title: {TITLE}")
-    print(f"   Body length: {len(BODY)} chars")
+    print(f"   Title: {TITLE[:60]}...")
     
     post_data = {
         "api_type": "json",
@@ -99,14 +117,12 @@ def main():
         "text": BODY,
         "sendreplies": True,
     }
+    if flair_id:
+        post_data["flair_id"] = flair_id
+    
+    r = session.post("https://oauth.reddit.com/api/submit", data=post_data, timeout=20)
     
     try:
-        r = session.post(
-            "https://oauth.reddit.com/api/submit",
-            data=post_data,
-            timeout=20
-        )
-        
         result = r.json()
         j = result.get("json", {})
         if j.get("errors"):
@@ -117,24 +133,12 @@ def main():
         
         data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
-        post_id = data.get("id", "")
         
         print(f"\n✅ Posted successfully!")
-        print(f"   ID: {post_id}")
         print(f"   URL: https://www.reddit.com{post_url}")
-        
-        # Save to file
-        with open("last_post.txt", "w") as f:
-            f.write(f"Post URL: https://www.reddit.com{post_url}\n")
-            f.write(f"Post ID: {post_id}\n")
-            f.write(f"Subreddit: r/{SUBREDDIT}\n")
-            f.write(f"Timestamp: {__import__('datetime').datetime.now().isoformat()}\n")
-        print(f"   (saved to last_post.txt)")
-        
     except Exception as e:
         print(f"❌ Failed: {e}")
-        if 'r' in locals() and hasattr(r, 'text'):
-            print(f"   Response: {r.text[:500]}")
+        print(f"   Response: {r.text[:500]}")
 
 
 if __name__ == "__main__":
