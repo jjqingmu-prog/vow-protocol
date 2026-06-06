@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses session cookie (JWT) for authentication — no OAuth needed.
+Uses session cookie (JWT) for authentication.
+Supports SOCKS5 proxy via 3020 mihomo.
 
 Usage: python3 scripts/reddit_post.py
+       python3 scripts/reddit_post.py --proxy socks5://127.0.0.1:3020
 """
 import sys, json, requests
 
@@ -33,25 +35,73 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
+# ── Proxy ─────────────────────────────────────────────────────
+def get_proxies():
+    """Check for proxy args and return proxy config."""
+    # Default proxy list to try
+    proxy_urls = [
+        "socks5://127.0.0.1:3020",
+        "socks5://127.0.0.1:1080",
+        "socks5://100.121.33.57:3020",
+    ]
+    
+    # Command-line arg overrides
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--proxy", "-p", help="SOCKS5 proxy URL")
+    args = parser.parse_args()
+    
+    if args.proxy:
+        proxy_urls = [args.proxy]
+    
+    proxies = {}
+    for url in proxy_urls:
+        proxies["http"] = url
+        proxies["https"] = url
+        # Test it
+        try:
+            r = requests.get("https://www.reddit.com", proxies=proxies, timeout=5,
+                           headers={"User-Agent": AGENT})
+            if r.status_code in (200, 429):  # 429 = rate limited but reachable
+                print(f"✅ Proxy working: {url}")
+                return proxies
+            print(f"   Proxy {url}: HTTP {r.status_code}")
+        except Exception as e:
+            print(f"   Proxy {url}: {e.__class__.__name__}")
+    
+    print("   Using direct connection (no proxy)")
+    return None
+
 
 def main():
+    proxies = get_proxies()
+    
     session = requests.Session()
     session.headers.update({"User-Agent": AGENT})
     session.cookies.set("reddit_session", COOKIE_VALUE, domain=".reddit.com")
     session.cookies.set("reddit_session", COOKIE_VALUE, domain="www.reddit.com")
     
+    if proxies:
+        session.proxies.update(proxies)
+    
     # ── Verify session ──
-    r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
-    if r.status_code != 200:
-        print(f"❌ Session invalid: HTTP {r.status_code}")
-        print(f"   Response: {r.text[:200]}")
+    print(f"\nVerifying session for {USER}...")
+    try:
+        r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
+        if r.status_code != 200:
+            print(f"❌ Session invalid: HTTP {r.status_code}")
+            print(f"   Response: {r.text[:200]}")
+            sys.exit(1)
+        
+        me = r.json()
+        print(f"✅ Logged in as: {me.get('name', '?')}")
+        print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
         sys.exit(1)
     
-    me = r.json()
-    print(f"✅ Logged in as: {me.get('name', '?')}")
-    print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
-    
     # ── Post ──
+    print(f"\nPosting to r/{SUBREDDIT}...")
     post_data = {
         "api_type": "json",
         "kind": "self",
@@ -61,9 +111,9 @@ def main():
         "sendreplies": True,
     }
     
-    r = session.post("https://www.reddit.com/api/submit", data=post_data, timeout=15)
-    
     try:
+        r = session.post("https://www.reddit.com/api/submit", data=post_data, timeout=20)
+        
         result = r.json()
         j = result.get("json", {})
         if j.get("errors"):
@@ -75,11 +125,11 @@ def main():
         data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
         print(f"✅ Posted to r/{SUBREDDIT}")
-        print(f"   Title: {TITLE}")
         print(f"   URL: https://reddit.com{post_url}")
     except Exception as e:
-        print(f"❌ Parse failed: {e}")
-        print(f"   Response: {r.text[:500]}")
+        print(f"❌ Failed: {e}")
+        if 'r' in locals() and hasattr(r, 'text'):
+            print(f"   Response: {r.text[:500]}")
 
 
 if __name__ == "__main__":
