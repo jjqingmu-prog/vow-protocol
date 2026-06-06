@@ -1,0 +1,4 @@
+.env
+scripts/.env
+.env.*
+.twitter_cookies.json
