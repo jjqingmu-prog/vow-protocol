@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses JWT session token as Bearer token for OAuth API.
+Uses OAuth Bearer token from browser session.
 
-Usage: 
+Usage:
   python3 scripts/reddit_post.py                    # direct
   python3 scripts/reddit_post.py --proxy socks5://127.0.0.1:3020   # via mihomo
 """
 import sys, json, requests
 
 # ── Config ────────────────────────────────────────────────────
-USER = "DaoVowScout"
-JWT_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml8xbDNjNnlwOWhtIiwiZXhwIjoxNzk2MzY5ODMxLjkwNjUyMiwiaWF0IjoxNzgwNzMxNDMxLjkwNjUyMiwianRpIjoibV9DTTQ2ckRTRjZOYndXSkNxd1pWTEpTMnZweG9BIiwiYXQiOjEsImNpZCI6ImNvb2tpZSIsImxjYSI6MTc0MTg1NDQyNzE3Niwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsImZsbyI6MywiYW1yIjpbInNzbyJdfQ.YFJ5Ej0ex4RLIpsw_Zr_eXSOWub3L-i8M-DnzpmrHSg0AG7qRRLXTwt6xey-QxZEzfXAsOuUpCZ3x2Ic-W-0bpXyeRIVwE3PSusMhiftpPE8h8zSg5aEMgy2omGR7j-6jsKUCiSh3FQiC3opmwy5xqSp1tU134jYHXSH9aByIKRTo-sLZQwzSccf0uA2KWxFtuBJold4lPU34lB38e0_yvmsQ5x0p4J1ukwzSax4i73MBJrG5nNkVVWK4le2JPJkcC1C7F9agjHScHKYsWo_lgOWcKFKpJBXvTnbVgcRLTQKulGpkIVXyYQCkZS-s7Mcys0KlRb1rCE8lCogzTEFqg"
+BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODE3ODMyLjIzNDYxNywiaWF0IjoxNzgwNzMxNDMyLjIzNDYxNywianRpIjoib0tHa1hSN2RScldJcHo0TXhPVWx1S21jZ3hqV1FBIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXhzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJaQXNKSUdOM2Rubm54VHlnTHRkT3ZJdWVMbEtyU2J1UGhQMnRFbU1KTGVNIiwiZmxvIjoyfQ.Qw7zesC_5mtcBVPyHQcYHJtYEnF88Sh6ddUbx8hGJQtqyE-j249Wv-dkpN0sU9qQz0HiIIlAQ6y3xq-f-Dg-AcAhlwJRhPOZqHq7KdbB5QEnQHMX80p0oambA9ZP086aWZxm2rXpPKuZdBLSxyUiZU_P6YsvEOFq9oxXYgyzkqRNjKRkXRmwd9wwV85IqPaTI2mUz8xJV3WgBhDc2l0KXjgIJM22klhYCyo9hBj8XMHiLZds3HjTvUuCmEW1ozMmikye0dHmcw50B_kfIZiB-bo2KNulbZft0hwidqGXgncXh_7JpjMhaO-7uM7SKp9w_wIqViOcRbxy9MyyFbteCA"
 
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
@@ -40,105 +39,58 @@ Would love to hear from others who've studied Eastern frameworks — BaZi, I Chi
 def get_proxies():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--proxy", "-p", help="SOCKS5 proxy URL")
+    parser.add_argument("--proxy", "-p", help="SOCKS5 proxy URL (e.g. socks5://127.0.0.1:3020)")
     args = parser.parse_args()
     if args.proxy:
         return {"http": args.proxy, "https": args.proxy}
-    return None
-
-
-def test_auth_method(session, method_name, auth_setup_fn):
-    """Try one auth method and return True if it works."""
-    auth_setup_fn(session)
+    # Try pysocks for SOCKS support
     try:
-        r = session.get("https://oauth.reddit.com/api/v1/me", timeout=15)
-        if r.status_code == 200:
-            me = r.json()
-            name = me.get("name", "")
-            if name:
-                print(f"✅ {method_name}: {name} (karma: {me.get('link_karma', 0)})")
-                return True
-            print(f"⚠️  {method_name}: authed but empty name")
-        elif r.status_code == 401:
-            print(f"❌ {method_name}: 401 Unauthorized")
-        else:
-            print(f"❌ {method_name}: HTTP {r.status_code}")
-    except Exception as e:
-        print(f"❌ {method_name}: {e}")
-    return False
+        import socks
+        return None
+    except:
+        pass
+    return None
 
 
 def main():
     proxies = get_proxies()
     
-    # ── Try different auth methods ──
     session = requests.Session()
-    session.headers.update({"User-Agent": AGENT})
+    session.headers.update({
+        "User-Agent": AGENT,
+        "Authorization": f"Bearer {BEARER_TOKEN}"
+    })
     if proxies:
         session.proxies.update(proxies)
     
-    authed = False
-    
-    # Method 1: Bearer token on oauth.reddit.com
-    def method1(s):
-        s.headers["Authorization"] = f"Bearer {JWT_TOKEN}"
-    
-    # Method 2: Cookie on oauth.reddit.com
-    def method2(s):
-        s.cookies.set("reddit_session", JWT_TOKEN, domain=".reddit.com")
-        s.cookies.set("token_v2", JWT_TOKEN, domain=".reddit.com")
-    
-    # Method 3: Bearer on www.reddit.com (old API)
-    def method3(s):
-        s.headers["Authorization"] = f"Bearer {JWT_TOKEN}"
-        s.cookies.set("reddit_session", JWT_TOKEN, domain=".reddit.com")
-    
-    for name, setup_fn, domain in [
-        ("OAuth Bearer", method1, "oauth"),
-        ("Cookie Auth", method2, "oauth"),
-        ("Combined", method3, "www"),
-    ]:
-        fresh_session = requests.Session()
-        fresh_session.headers.update({"User-Agent": AGENT})
-        if proxies:
-            fresh_session.proxies.update(proxies)
-        setup_fn(fresh_session)
-        
-        base = "https://oauth.reddit.com" if "oauth" in domain else "https://www.reddit.com"
-        try:
-            r = fresh_session.get(f"{base}/api/v1/me", timeout=15)
-            if r.status_code == 200:
-                me = r.json()
-                name_val = me.get("name", "")
-                if name_val:
-                    print(f"✅ {name}: {name_val} (karma: {me.get('link_karma', 0)})")
-                    session = fresh_session
-                    authed = True
-                    break
-                print(f"⚠️  {name}: HTTP 200 but empty user")
-            elif r.status_code == 401:
-                print(f"❌ {name}: 401")
-            else:
-                print(f"❌ {name}: HTTP {r.status_code}")
-                if r.status_code == 403:
-                    print(f"   Body: {r.text[:100]}")
-        except Exception as e:
-            print(f"❌ {name}: {e.__class__.__name__}: {e}")
-    
-    if not authed:
-        print("\n❌ All auth methods failed.")
-        print("\nNeed: extract the OAuth access_token from browser.")
-        print("Try this instead:")
-        print("1. Open Chrome/Firefox DevTools (F12)")
-        print("2. Go to Network tab")
-        print("3. Refresh Reddit homepage or any page")
-        print("4. Click on any request to www.reddit.com or oauth.reddit.com")
-        print("5. Find the 'Authorization' header in Request Headers")
-        print("6. Copy the full 'Bearer ...' value and send it to me")
+    # ── Verify auth ──
+    print("Verifying authentication...")
+    try:
+        r = session.get("https://oauth.reddit.com/api/v1/me", timeout=15)
+        if r.status_code == 200:
+            me = r.json()
+            username = me.get("name", "?")
+            link_karma = me.get("link_karma", 0)
+            comment_karma = me.get("comment_karma", 0)
+            print(f"✅ Authenticated as: {username}")
+            print(f"   Karma: {link_karma} link / {comment_karma} comment")
+        else:
+            print(f"❌ Auth failed: HTTP {r.status_code}")
+            try:
+                err = r.json()
+                print(f"   Error: {err.get('error', '?')}: {err.get('message', '')}")
+            except:
+                print(f"   Body: {r.text[:200]}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
         sys.exit(1)
     
     # ── Post ──
     print(f"\nPosting to r/{SUBREDDIT}...")
+    print(f"   Title: {TITLE}")
+    print(f"   Body length: {len(BODY)} chars")
+    
     post_data = {
         "api_type": "json",
         "kind": "self",
@@ -158,15 +110,27 @@ def main():
         result = r.json()
         j = result.get("json", {})
         if j.get("errors"):
-            print(f"❌ Post failed: {j['errors']}")
+            print(f"❌ Post failed:")
             for err in j["errors"]:
                 print(f"   - {err}")
             sys.exit(1)
         
         data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
-        print(f"✅ Posted to r/{SUBREDDIT}")
-        print(f"   URL: https://reddit.com{post_url}")
+        post_id = data.get("id", "")
+        
+        print(f"\n✅ Posted successfully!")
+        print(f"   ID: {post_id}")
+        print(f"   URL: https://www.reddit.com{post_url}")
+        
+        # Save to file
+        with open("last_post.txt", "w") as f:
+            f.write(f"Post URL: https://www.reddit.com{post_url}\n")
+            f.write(f"Post ID: {post_id}\n")
+            f.write(f"Subreddit: r/{SUBREDDIT}\n")
+            f.write(f"Timestamp: {__import__('datetime').datetime.now().isoformat()}\n")
+        print(f"   (saved to last_post.txt)")
+        
     except Exception as e:
         print(f"❌ Failed: {e}")
         if 'r' in locals() and hasattr(r, 'text'):
