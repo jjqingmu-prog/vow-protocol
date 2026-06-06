@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses session cookie (JWT) for authentication.
-Supports SOCKS5 proxy via 3020 mihomo.
+Uses JWT session token as Bearer token for OAuth API.
 
-Usage: python3 scripts/reddit_post.py
-       python3 scripts/reddit_post.py --proxy socks5://127.0.0.1:3020
+Usage: 
+  python3 scripts/reddit_post.py                    # direct
+  python3 scripts/reddit_post.py --proxy socks5://127.0.0.1:3020   # via mihomo
 """
 import sys, json, requests
 
 # ── Config ────────────────────────────────────────────────────
 USER = "DaoVowScout"
-COOKIE_VALUE = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml8xbDNjNnlwOWhtIiwiZXhwIjoxNzk2MzY5ODMxLjkwNjUyMiwiaWF0IjoxNzgwNzMxNDMxLjkwNjUyMiwianRpIjoibV9DTTQ2ckRTRjZOYndXSkNxd1pWTEpTMnZweG9BIiwiYXQiOjEsImNpZCI6ImNvb2tpZSIsImxjYSI6MTc0MTg1NDQyNzE3Niwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsImZsbyI6MywiYW1yIjpbInNzbyJdfQ.YFJ5Ej0ex4RLIpsw_Zr_eXSOWub3L-i8M-DnzpmrHSg0AG7qRRLXTwt6xey-QxZEzfXAsOuUpCZ3x2Ic-W-0bpXyeRIVwE3PSusMhiftpPE8h8zSg5aEMgy2omGR7j-6jsKUCiSh3FQiC3opmwy5xqSp1tU134jYHXSH9aByIKRTo-sLZQwzSccf0uA2KWxFtuBJold4lPU34lB38e0_yvmsQ5x0p4J1ukwzSax4i73MBJrG5nNkVVWK4le2JPJkcC1C7F9agjHScHKYsWo_lgOWcKFKpJBXvTnbVgcRLTQKulGpkIVXyYQCkZS-s7Mcys0KlRb1rCE8lCogzTEFqg"
+JWT_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml8xbDNjNnlwOWhtIiwiZXhwIjoxNzk2MzY5ODMxLjkwNjUyMiwiaWF0IjoxNzgwNzMxNDMxLjkwNjUyMiwianRpIjoibV9DTTQ2ckRTRjZOYndXSkNxd1pWTEpTMnZweG9BIiwiYXQiOjEsImNpZCI6ImNvb2tpZSIsImxjYSI6MTc0MTg1NDQyNzE3Niwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsImZsbyI6MywiYW1yIjpbInNzbyJdfQ.YFJ5Ej0ex4RLIpsw_Zr_eXSOWub3L-i8M-DnzpmrHSg0AG7qRRLXTwt6xey-QxZEzfXAsOuUpCZ3x2Ic-W-0bpXyeRIVwE3PSusMhiftpPE8h8zSg5aEMgy2omGR7j-6jsKUCiSh3FQiC3opmwy5xqSp1tU134jYHXSH9aByIKRTo-sLZQwzSccf0uA2KWxFtuBJold4lPU34lB38e0_yvmsQ5x0p4J1ukwzSax4i73MBJrG5nNkVVWK4le2JPJkcC1C7F9agjHScHKYsWo_lgOWcKFKpJBXvTnbVgcRLTQKulGpkIVXyYQCkZS-s7Mcys0KlRb1rCE8lCogzTEFqg"
 
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
@@ -35,69 +35,106 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
+
 # ── Proxy ─────────────────────────────────────────────────────
 def get_proxies():
-    """Check for proxy args and return proxy config."""
-    # Default proxy list to try
-    proxy_urls = [
-        "socks5://127.0.0.1:3020",
-        "socks5://127.0.0.1:1080",
-        "socks5://100.121.33.57:3020",
-    ]
-    
-    # Command-line arg overrides
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--proxy", "-p", help="SOCKS5 proxy URL")
     args = parser.parse_args()
-    
     if args.proxy:
-        proxy_urls = [args.proxy]
-    
-    proxies = {}
-    for url in proxy_urls:
-        proxies["http"] = url
-        proxies["https"] = url
-        # Test it
-        try:
-            r = requests.get("https://www.reddit.com", proxies=proxies, timeout=5,
-                           headers={"User-Agent": AGENT})
-            if r.status_code in (200, 429):  # 429 = rate limited but reachable
-                print(f"✅ Proxy working: {url}")
-                return proxies
-            print(f"   Proxy {url}: HTTP {r.status_code}")
-        except Exception as e:
-            print(f"   Proxy {url}: {e.__class__.__name__}")
-    
-    print("   Using direct connection (no proxy)")
+        return {"http": args.proxy, "https": args.proxy}
     return None
+
+
+def test_auth_method(session, method_name, auth_setup_fn):
+    """Try one auth method and return True if it works."""
+    auth_setup_fn(session)
+    try:
+        r = session.get("https://oauth.reddit.com/api/v1/me", timeout=15)
+        if r.status_code == 200:
+            me = r.json()
+            name = me.get("name", "")
+            if name:
+                print(f"✅ {method_name}: {name} (karma: {me.get('link_karma', 0)})")
+                return True
+            print(f"⚠️  {method_name}: authed but empty name")
+        elif r.status_code == 401:
+            print(f"❌ {method_name}: 401 Unauthorized")
+        else:
+            print(f"❌ {method_name}: HTTP {r.status_code}")
+    except Exception as e:
+        print(f"❌ {method_name}: {e}")
+    return False
 
 
 def main():
     proxies = get_proxies()
     
+    # ── Try different auth methods ──
     session = requests.Session()
     session.headers.update({"User-Agent": AGENT})
-    session.cookies.set("reddit_session", COOKIE_VALUE, domain=".reddit.com")
-    session.cookies.set("reddit_session", COOKIE_VALUE, domain="www.reddit.com")
-    
     if proxies:
         session.proxies.update(proxies)
     
-    # ── Verify session ──
-    print(f"\nVerifying session for {USER}...")
-    try:
-        r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
-        if r.status_code != 200:
-            print(f"❌ Session invalid: HTTP {r.status_code}")
-            print(f"   Response: {r.text[:200]}")
-            sys.exit(1)
+    authed = False
+    
+    # Method 1: Bearer token on oauth.reddit.com
+    def method1(s):
+        s.headers["Authorization"] = f"Bearer {JWT_TOKEN}"
+    
+    # Method 2: Cookie on oauth.reddit.com
+    def method2(s):
+        s.cookies.set("reddit_session", JWT_TOKEN, domain=".reddit.com")
+        s.cookies.set("token_v2", JWT_TOKEN, domain=".reddit.com")
+    
+    # Method 3: Bearer on www.reddit.com (old API)
+    def method3(s):
+        s.headers["Authorization"] = f"Bearer {JWT_TOKEN}"
+        s.cookies.set("reddit_session", JWT_TOKEN, domain=".reddit.com")
+    
+    for name, setup_fn, domain in [
+        ("OAuth Bearer", method1, "oauth"),
+        ("Cookie Auth", method2, "oauth"),
+        ("Combined", method3, "www"),
+    ]:
+        fresh_session = requests.Session()
+        fresh_session.headers.update({"User-Agent": AGENT})
+        if proxies:
+            fresh_session.proxies.update(proxies)
+        setup_fn(fresh_session)
         
-        me = r.json()
-        print(f"✅ Logged in as: {me.get('name', '?')}")
-        print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
-    except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        base = "https://oauth.reddit.com" if "oauth" in domain else "https://www.reddit.com"
+        try:
+            r = fresh_session.get(f"{base}/api/v1/me", timeout=15)
+            if r.status_code == 200:
+                me = r.json()
+                name_val = me.get("name", "")
+                if name_val:
+                    print(f"✅ {name}: {name_val} (karma: {me.get('link_karma', 0)})")
+                    session = fresh_session
+                    authed = True
+                    break
+                print(f"⚠️  {name}: HTTP 200 but empty user")
+            elif r.status_code == 401:
+                print(f"❌ {name}: 401")
+            else:
+                print(f"❌ {name}: HTTP {r.status_code}")
+                if r.status_code == 403:
+                    print(f"   Body: {r.text[:100]}")
+        except Exception as e:
+            print(f"❌ {name}: {e.__class__.__name__}: {e}")
+    
+    if not authed:
+        print("\n❌ All auth methods failed.")
+        print("\nNeed: extract the OAuth access_token from browser.")
+        print("Try this instead:")
+        print("1. Open Chrome/Firefox DevTools (F12)")
+        print("2. Go to Network tab")
+        print("3. Refresh Reddit homepage or any page")
+        print("4. Click on any request to www.reddit.com or oauth.reddit.com")
+        print("5. Find the 'Authorization' header in Request Headers")
+        print("6. Copy the full 'Bearer ...' value and send it to me")
         sys.exit(1)
     
     # ── Post ──
@@ -112,7 +149,11 @@ def main():
     }
     
     try:
-        r = session.post("https://www.reddit.com/api/submit", data=post_data, timeout=20)
+        r = session.post(
+            "https://oauth.reddit.com/api/submit",
+            data=post_data,
+            timeout=20
+        )
         
         result = r.json()
         j = result.get("json", {})
