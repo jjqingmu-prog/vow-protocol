@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses OAuth Bearer token.
+Uses OAuth Bearer token from browser session.
 
-Usage: python3 scripts/reddit_post.py
+Usage:
+  python3 scripts/reddit_post.py
 """
 
-import sys, json, requests, base64, datetime
+import sys, json, requests, re
+from pathlib import Path
 
-BEARER_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpzS3dsMnlsV0VtMjVmcXhwTU40cWY4MXE2OWFFdWFyMnpLMUdhVGxjdWNZIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ1c2VyIiwiZXhwIjoxNzgwODQwNTQ2LjE3OTM2MiwiaWF0IjoxNzgwNzU0MTQ2LjE3OTM2MiwianRpIjoia0ZLSURNanFsLVdvczRDT2VOejJQOHlqVDhyeGhnIiwiY2lkIjoiMFItV0FNaHVvby1NeVEiLCJsaWQiOiJ0Ml8xbDNjNnlwOWhtIiwiYWlkIjoidDJfMWwzYzZ5cDlobSIsImF0IjoxLCJsY2EiOjE3NDE4NTQ0MjcxNzYsInNjcCI6ImVKeGtrZEdPdERBSWhkLUZhNV9nZjVVX20wMXRjWWFzTFFhb2szbjdEVm9jazcwN2NENHBIUDlES29xRkRDWlhncW5BQkZnVHJUREJSdVQ5bkxtM2cyaU5lOHRZc1puQ0JGbXdGRHJrbUxHc2lRUW1lSklheXhzbW9JTE55Rnl1dEdOTkxUMFFKcWhjTXJlRkhwYzJvYmtiaTU2ZEdGVzVyRHlvc1ZmbDB0akdGTFlueGpjYnF3MnB1QzZuTWtuTFF2a3NYdlRqTjlXMzl2bXpfU2EwSjhPS3F1bUIzaGxKQ0c0c2ZwaW0zZDlUazU2dEN4YTE5M3FRMnVkNjNLNTkxaXcwTzdlZjZfbHJJeG1YWTJoLUp2dDMxeS1oQTQ4OEx6UHFBRWFzNFVjWmRtUWRfbFVIVUxtZ0pHTUo0dE1JNU1ybDIzOEp0bXZUdjhidEV6OThNLUttTl96V0ROUnpDZUxRcF9IMUd3QUFfXzhRMWVUUiIsInJjaWQiOiJLOHh0OUJNSW04NDdqT2oxTlFpdlJVWmxLNWEtVXotaDJYYXEyWWdnd2dNIiwiZmxvIjoyfQ.iw45AR17-khTC1dZfvOPPi4BxYlP2_Ns806XXCrL0gly7d17mXPRitDuxKxTQW8CVVw8BH6btjZEj_krx1niL-23BQg0e_CSLS3i5lf8jda_G9q-BDU8RHOB-Xld7nuvgHlfUVVAsJ2xM1X9gzOFfhwqhNEo9_021gz4ubFad_oHuRfDBNBeVpQok1lMEtPz7E8tRHkhchFWrpCktytcJOh6WgCDX3zJBALq-JDqsEd71j2CsuAwu_K2UwB5wjJ3Lc9cp3Za4Y77A-mxCGw1c2DPizQiKq_k50Tt3IZmskCjEYcxmviaS2w6RQlL5-YwAA7uIQJTeq7i7qtmalu7AQ"
-
+# ── Config ────────────────────────────────────────────────────
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
+SCRIPT_DIR = Path(__file__).parent
+CONFIG_FILE = SCRIPT_DIR / ".env"
+TOKEN_FILE = SCRIPT_DIR / ".reddit_token.txt"
 
 SUBREDDIT = "spirituality"
 TITLE = "I spent a year studying BaZi (Chinese Four Pillars). Here's what surprised me."
@@ -33,11 +37,39 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
 
+def get_token():
+    """Get Bearer token from saved file."""
+    if TOKEN_FILE.exists():
+        with open(TOKEN_FILE) as f:
+            token = f.read().strip()
+            if token:
+                return token
+    
+    # Also check .env
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("REDDIT_TOKEN="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    
+    print(f"❌ No Bearer token found.")
+    print(f"   Save it to {TOKEN_FILE}")
+    print(f"   Or set REDDIT_TOKEN in {CONFIG_FILE}")
+    print(f"\n   To get the token:")
+    print(f"   1. Login to Reddit as DaoVowScout in browser")
+    print(f"   2. F12 → Network → refresh → click first request")
+    print(f"   3. Copy Authorization: Bearer <value> to a file")
+    sys.exit(1)
+
+
 def main():
+    bearer = get_token()
+    
     session = requests.Session()
     session.headers.update({
         "User-Agent": AGENT,
-        "Authorization": f"Bearer {BEARER_TOKEN}"
+        "Authorization": f"Bearer {bearer}"
     })
     
     # ── Verify auth ──
@@ -61,10 +93,10 @@ def main():
         flairs = r.json()
         print(f"   Found {len(flairs)} flairs")
         for f in flairs:
-            print(f"   [{f['id']}] {f['text']}")
+            print(f"   [{f['id'][:8]}...] {f['text']}")
         
         # Auto-select: prefer Discussion or first text flair
-        for name in ["Discussion", "Resource", "Other", "Share"]:
+        for name in ["Discussion", "General", "Resource", "Other", "Share"]:
             for f in flairs:
                 if f.get('text', '').lower() == name.lower():
                     flair_id = f['id']
