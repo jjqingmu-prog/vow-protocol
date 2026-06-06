@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
 Reddit post script for DaoVowScout.
-Uses OAuth password grant with known public client IDs.
+Uses session cookie (JWT) for authentication — no OAuth needed.
 
 Usage: python3 scripts/reddit_post.py
 """
-import sys, json
-import requests
+import sys, json, requests
 
+# ── Config ────────────────────────────────────────────────────
 USER = "DaoVowScout"
-PASS = "5285jun1215"
+COOKIE_VALUE = "eyJhbGciOiJSUzI1NiIsImtpZCI6IlNIQTI1NjpsVFdYNlFVUEloWktaRG1rR0pVd1gvdWNFK01BSjBYRE12RU1kNzVxTXQ4IiwidHlwIjoiSldUIn0.eyJzdWIiOiJ0Ml8xbDNjNnlwOWhtIiwiZXhwIjoxNzk2MzY5ODMxLjkwNjUyMiwiaWF0IjoxNzgwNzMxNDMxLjkwNjUyMiwianRpIjoibV9DTTQ2ckRTRjZOYndXSkNxd1pWTEpTMnZweG9BIiwiYXQiOjEsImNpZCI6ImNvb2tpZSIsImxjYSI6MTc0MTg1NDQyNzE3Niwic2NwIjoiZUp5S2pnVUVBQURfX3dFVkFMayIsImZsbyI6MywiYW1yIjpbInNzbyJdfQ.YFJ5Ej0ex4RLIpsw_Zr_eXSOWub3L-i8M-DnzpmrHSg0AG7qRRLXTwt6xey-QxZEzfXAsOuUpCZ3x2Ic-W-0bpXyeRIVwE3PSusMhiftpPE8h8zSg5aEMgy2omGR7j-6jsKUCiSh3FQiC3opmwy5xqSp1tU134jYHXSH9aByIKRTo-sLZQwzSccf0uA2KWxFtuBJold4lPU34lB38e0_yvmsQ5x0p4J1ukwzSax4i73MBJrG5nNkVVWK4le2JPJkcC1C7F9agjHScHKYsWo_lgOWcKFKpJBXvTnbVgcRLTQKulGpkIVXyYQCkZS-s7Mcys0KlRb1rCE8lCogzTEFqg"
+
 AGENT = "DaoVowScout/1.0.0 (by u/DaoVowScout)"
 
 SUBREDDIT = "spirituality"
@@ -33,73 +34,24 @@ I've been exploring how these symbolic timing patterns can serve as a framework 
 Would love to hear from others who've studied Eastern frameworks — BaZi, I Ching, Plum Blossom — and how you navigate the line between meaningful framework and superstition."""
 
 
-# Known public client IDs from Reddit's own apps
-CLIENT_IDS = [
-    "wLc2f5cp2lSGog",     # Reddit web / general
-    "AnTXNrVdHnMhVQ",     # Reddit iOS app
-    "CgIIvR19Q0aK6g",     # Reddit Android / newer
-]
-
-
-def try_oauth(client_id):
-    """Try OAuth password grant with a given client_id."""
-    try:
-        auth = requests.auth.HTTPBasicAuth(client_id, "")
-        data = {"grant_type": "password", "username": USER, "password": PASS}
-        headers = {"User-Agent": AGENT}
-        
-        r = requests.post(
-            "https://www.reddit.com/api/v1/access_token",
-            auth=auth, data=data, headers=headers,
-            timeout=15
-        )
-        
-        result = r.json()
-        if "access_token" in result:
-            token = result["access_token"]
-            print(f"✅ OAuth success with client_id={client_id}")
-            print(f"   Token expires: {result.get('expires_in', '?')}s")
-            return token
-        else:
-            err = result.get("error", "?")
-            msg = result.get("message", "")
-            
-            # Special case: if "unauthorized_client", this client doesn't support password grants
-            if err == "unauthorized_client":
-                return None  # Try next client_id
-            
-            if err == "invalid_grant":
-                print(f"❌ Invalid credentials for client_id={client_id}")
-                return False  # Wrong password (all will fail)
-            
-            print(f"❌ client_id={client_id}: {err}: {msg}")
-            return None
-    except Exception as e:
-        print(f"❌ client_id={client_id}: {e}")
-        return None
-
-
-def post_with_oauth(token):
-    """Submit a text post using OAuth bearer token."""
+def main():
     session = requests.Session()
-    session.headers.update({
-        "User-Agent": AGENT,
-        "Authorization": f"bearer {token}"
-    })
+    session.headers.update({"User-Agent": AGENT})
+    session.cookies.set("reddit_session", COOKIE_VALUE, domain=".reddit.com")
+    session.cookies.set("reddit_session", COOKIE_VALUE, domain="www.reddit.com")
     
-    # Verify auth
-    r = session.get("https://oauth.reddit.com/api/v1/me", timeout=10)
-    try:
-        me = r.json()
-        print(f"   Verified: {me.get('name', '?')} (karma: {me.get('link_karma', 0)})")
-    except:
-        print(f"   Warning: /api/v1/me returned {r.status_code}")
-        if r.status_code == 401:
-            print("   (token expired)")
-            return False
-        return False
+    # ── Verify session ──
+    r = session.get("https://www.reddit.com/api/v1/me", timeout=15)
+    if r.status_code != 200:
+        print(f"❌ Session invalid: HTTP {r.status_code}")
+        print(f"   Response: {r.text[:200]}")
+        sys.exit(1)
     
-    # Post
+    me = r.json()
+    print(f"✅ Logged in as: {me.get('name', '?')}")
+    print(f"   Karma: {me.get('link_karma', 0)} link / {me.get('comment_karma', 0)} comment")
+    
+    # ── Post ──
     post_data = {
         "api_type": "json",
         "kind": "self",
@@ -109,50 +61,25 @@ def post_with_oauth(token):
         "sendreplies": True,
     }
     
-    r = session.post(
-        "https://oauth.reddit.com/api/submit",
-        data=post_data,
-        timeout=15
-    )
+    r = session.post("https://www.reddit.com/api/submit", data=post_data, timeout=15)
     
     try:
         result = r.json()
         j = result.get("json", {})
         if j.get("errors"):
             print(f"❌ Post failed: {j['errors']}")
-            return False
+            for err in j["errors"]:
+                print(f"   - {err}")
+            sys.exit(1)
         
         data = j.get("data", {})
         post_url = data.get("url", "") or data.get("permalink", "")
         print(f"✅ Posted to r/{SUBREDDIT}")
-        print(f"   URL: https://reddit.com{post_url if post_url else '/'}")
-        return True
+        print(f"   Title: {TITLE}")
+        print(f"   URL: https://reddit.com{post_url}")
     except Exception as e:
-        print(f"❌ Post failed: {e}")
+        print(f"❌ Parse failed: {e}")
         print(f"   Response: {r.text[:500]}")
-        return False
-
-
-def main():
-    token = None
-    for cid in CLIENT_IDS:
-        result = try_oauth(cid)
-        if result and isinstance(result, str):
-            token = result
-            break
-    
-    if not token:
-        print("\n❌ All client IDs failed.")
-        print("\nThe issue: Reddit requires a registered app (client_id + client_secret).")
-        print("Known public client IDs no longer work with password grants.")
-        print("\nPlease register an app via your browser:")
-        print("  1. Login to https://www.reddit.com as DaoVowScout")
-        print("  2. Go to https://old.reddit.com/prefs/apps")
-        print("  3. Click 'create app' and fill the form")
-        print("  4. Send me the client_id and secret")
-        sys.exit(1)
-    
-    post_with_oauth(token)
 
 
 if __name__ == "__main__":
